@@ -244,8 +244,17 @@ export async function readMint(conn, mint, owner) {
 }
 
 // Visi tokenai wallet'e (su pavadinimais iš metadata)
-export async function listWalletTokens(conn, owner) {
-  const res = await conn.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }, 'confirmed');
+export async function listWalletTokens(conn, owner, fallbacks = []) {
+  let res, lastErr;
+  const urls = [conn.rpcEndpoint, ...fallbacks.filter(u => u !== conn.rpcEndpoint)];
+  for (const u of urls) {
+    try {
+      const c = u === conn.rpcEndpoint ? conn : new Connection(u, 'confirmed');
+      res = await c.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }, 'confirmed');
+      conn = c; break;
+    } catch (e) { lastErr = e; console.warn('tokenų sąrašas nepavyko per', u, e); }
+  }
+  if (!res) throw lastErr || new Error('RPC neatsako');
   const list = res.value.map(a => a.account.data.parsed.info)
     .filter(i => Number(i.tokenAmount.uiAmount) > 0 && i.tokenAmount.decimals > 0)
     .map(i => ({ mint: i.mint, amount: Number(i.tokenAmount.uiAmount), decimals: i.tokenAmount.decimals }))

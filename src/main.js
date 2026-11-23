@@ -293,13 +293,17 @@ async function loadWalletTokens() {
   if (!wallet || draft.mint) return;
   $('walletTokens').innerHTML = '<div class="hint">Kraunu…</div>';
   try {
-    walletTokens = await C.listWalletTokens(conn, wallet);
+    walletTokens = await C.listWalletTokens(conn, wallet, C.DEFAULT_RPC[S.net]);
     const pooled = new Set(coins.filter(c => c.net === S.net).map(c => c.mint));
     const list = walletTokens.filter(t => t.decimals === C.DECIMALS);
     $('walletTokens').innerHTML = list.length ? list.map((t, i) => `<button class="coin" data-wt="${walletTokens.indexOf(t)}">
       <span class="ph"></span><span><b>${esc(t.symbol || '?')}</b>${esc(t.name || short(t.mint))}<small>${tok(t.amount)} · ${short(t.mint)}${pooled.has(t.mint) ? ' · jau turi pool\'ą' : ''}</small></span></button>`).join('')
       : '<div class="hint">Tinkamų coinų wallet\'e nerasta.</div>';
-  } catch (e) { console.warn(e); $('walletTokens').innerHTML = '<div class="hint warn">Nepavyko nuskaityti wallet\'o (RPC). Spausk „Atnaujinti“ arba įvesk CA ranka.</div>'; }
+  } catch (e) {
+    console.warn(e);
+    const msg = String(e?.message || e).slice(0, 140);
+    $('walletTokens').innerHTML = '<div class="hint warn">Nepavyko nuskaityti wallet\'o: ' + esc(msg) + '<br>Įdėk nemokamą Helius RPC (skiltis „RPC ir SOL kaina“) arba įvesk CA ranka žemiau.</div>';
+  }
 }
 $('walletTokens').addEventListener('click', e => {
   const b = e.target.closest('[data-wt]'); if (!b) return;
