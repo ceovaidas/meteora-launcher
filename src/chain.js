@@ -14,7 +14,7 @@ import { createNoopSigner, publicKey as umiPk, none } from '@metaplex-foundation
 import { mplTokenMetadata, createMetadataAccountV3, safeFetchMetadataFromSeeds } from '@metaplex-foundation/mpl-token-metadata';
 import { toWeb3JsInstruction } from '@metaplex-foundation/umi-web3js-adapters';
 import {
-  CpAmm, getSqrtPriceFromPrice, getPriceFromSqrtPrice, MAX_SQRT_PRICE,
+  CpAmm, deriveCustomizablePoolAddress, getSqrtPriceFromPrice, getPriceFromSqrtPrice, MAX_SQRT_PRICE,
   getBaseFeeParams, getDynamicFeeParams, BaseFeeMode, CollectFeeMode, ActivationType,
 } from '@meteora-ag/cp-amm-sdk';
 import BN from 'bn.js';
@@ -257,6 +257,12 @@ export async function fetchLive(conn, { mint, pool, owner, supply }) {
     poolSol: Number(bBal.value.uiAmount || 0),
     mine, minePct: mine / supply * 100,
   };
+}
+
+// Paleisto coino pool'o paieška (adresas apskaičiuojamas iš CA)
+export async function findPool(conn, mint) {
+  const pool = deriveCustomizablePoolAddress(new PublicKey(mint), NATIVE_MINT).toBase58();
+  return (await accountExists(conn, pool)) ? pool : null;
 }
 
 // Ar sąskaita egzistuoja tinkle

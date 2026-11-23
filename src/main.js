@@ -258,7 +258,8 @@ $('doPool').addEventListener('click', e => busy(e.target, async () => {
   try {
     r = await C.createPool(conn, { payer: wallet, mint: draft.mint, poolTokens: p.poolTokens, startPriceSol: p.startPriceSol, feeBps: p.feeBps, antiSniper: p.antiSniper, lock: p.lock }, pl => { draft.pendingPool = pl; saveDraft(); });
   } catch (err) {
-    if (draft.pendingPool && await C.accountExists(conn, draft.pendingPool)) r = { pool: draft.pendingPool, sig: null };
+    const found = (draft.pendingPool && await C.accountExists(conn, draft.pendingPool)) ? draft.pendingPool : await C.findPool(conn, draft.mint);
+    if (found) r = { pool: found, sig: null };
     else throw err;
   }
   draft.pendingPool = null;
@@ -326,8 +327,36 @@ $('walletTokens').addEventListener('click', e => {
 });
 $('recRefresh').addEventListener('click', loadWalletTokens);
 
+// Pridėti rastą paleistą coiną į sąrašą ir atidaryti live
+async function adoptLaunched(mint, pool, extra = {}) {
+  let c = coins.find(x => x.mint === mint && x.net === S.net);
+  if (!c) {
+    let supply = extra.supply || draft.supply || 1e9;
+    try { supply = (await C.readMint(conn, mint, wallet || mint)).supply; } catch {}
+    c = { net: S.net, mint, pool, name: extra.name || draft.name || '', symbol: extra.symbol || draft.symbol || '?', supply,
+      poolTokens: extra.poolTokens || Math.floor(supply * 0.9), startPriceSol: extra.startPriceSol || draft.startPriceSol || params().startPriceSol || 1e-9,
+      created: Date.now(), image: draft.image };
+    coins.unshift(c); store.set('ml-coins', coins);
+  }
+  if (draft.mint === mint) { draft.pool = pool; saveDraft(); }
+  renderSteps(); renderMine(); openLive(c);
+  return c;
+}
+$('findBtn').addEventListener('click', e => busy(e.target, async () => {
+  const mint = $('findMint').value.trim();
+  if (!mint) throw new Error('Įklijuok coino CA.');
+  const pool = await C.findPool(conn, mint);
+  if (!pool) throw new Error('Šiam coinui Meteora pool\'as nerastas (' + (S.net) + ').');
+  await adoptLaunched(mint, pool);
+  $('findBox').open = false; toast('Rasta! Rodau live informaciją.');
+}));
+
 // Jei mint'as liko „pakibęs“ – patikrinam tinkle
 async function checkPending() {
+  if (draft.mint && !draft.pool) {
+    const pool = await C.findPool(conn, draft.mint);
+    if (pool) { await adoptLaunched(draft.mint, pool); toast('Tavo pool\'as rastas – coinas LIVE ✓'); return; }
+  }
   if (draft.pendingMint && !draft.mint && await C.accountExists(conn, draft.pendingMint)) {
     draft.mint = draft.pendingMint; draft.pendingMint = null; saveDraft(); renderSteps(); toast('Coinas rastas tinkle ✓');
   }
