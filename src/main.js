@@ -15,8 +15,8 @@ let wallet = null, conn = null, logoFile = null, liveTimer = null, liveCoin = nu
 const draftKey = () => 'ml-draft-' + S.net;
 let draft = store.get(draftKey(), {});
 let coins = store.get('ml-coins', []);
-const FORM = ['name', 'symbol', 'desc', 'website', 'twitter', 'telegram', 'uri', 'supply', 'pct', 'mcap', 'fee', 'devbuy'];
-const CHECKS = ['anti', 'lock', 'mutable'];
+const FORM = ['name', 'symbol', 'desc', 'website', 'twitter', 'telegram', 'uri', 'supply', 'pct', 'mcap', 'fee', 'devbuy', 'twoSol'];
+const CHECKS = ['anti', 'lock', 'mutable', 'twoSided'];
 
 // ---------- formatai ----------
 const usd = v => { if (!isFinite(v)) return '–'; const a = Math.abs(v); if (a >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B'; if (a >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M'; if (a >= 1e3) return '$' + (v / 1e3).toFixed(a >= 1e4 ? 1 : 2) + 'K'; return '$' + v.toFixed(2); };
@@ -62,7 +62,7 @@ async function setNet(n) {
   $('netWarn').textContent = n === 'mainnet' ? 'MAINNET – tikri pinigai' : 'DEVNET – testinis tinklas, pinigai netikri';
   $('netWarn').className = 'banner ' + n;
   $('airdrop').hidden = n !== 'devnet';
-  renderSteps(); renderMine();
+  renderSteps(); renderMine(); calc();
   await ensureRpc();
   refreshBal(); checkPending(); loadWalletTokens();
 }
@@ -141,8 +141,10 @@ function params() {
   const mcapUsd = Math.max(1, +$('mcap').value || 6500);
   const solUsd = S.solUsd || 0;
   const startPriceSol = solUsd ? mcapUsd / solUsd / supply : 0;
-  const poolTokens = Math.floor(supply * pct / 100);
-  return { supply, pct, mcapUsd, solUsd, startPriceSol, poolTokens, mine: supply - poolTokens,
+  const twoSol = (S.net === 'devnet' && $('twoSided').checked) ? Math.max(0.01, +$('twoSol').value || 0.3) : 0;
+  let poolTokens = Math.floor(supply * pct / 100), realPct = pct;
+  if (twoSol && startPriceSol) { poolTokens = Math.min(supply, Math.floor(twoSol / startPriceSol)); realPct = +(poolTokens / supply * 100).toFixed(3); }
+  return { supply, pct: realPct, mcapUsd, solUsd, startPriceSol, poolTokens, mine: supply - poolTokens, twoSol,
     devBuy: Math.max(0, +$('devbuy').value || 0),
     feeBps: Math.round((+$('fee').value || 1) * 100), antiSniper: $('anti').checked, lock: $('lock').checked, mutable: $('mutable').checked };
 }
@@ -160,8 +162,23 @@ $('presets').addEventListener('click', e => {
 });
 
 function calc() {
+  $('testBox').hidden = S.net !== 'devnet';
+  $('twoSidedRow').hidden = !(S.net === 'devnet' && $('twoSided').checked);
   const p = params();
   if (!p.solUsd) { $('calc').innerHTML = '<div class="note warn">Įvesk SOL kainą (skiltis „RPC ir SOL kaina“).</div>'; return; }
+  if (p.twoSol) {
+    const x = p.twoSol, y = p.poolTokens, k = x * y, own = p.mine;
+    const sellAll = x - k / (y + own * (1 - p.feeBps / 1e4));
+    $('calc').innerHTML = kv([
+      ['Startinis mcap', usd(p.mcapUsd) + ' · ' + sol(p.mcapUsd / p.solUsd)],
+      ['Pool\'e', sol(x) + ' + ' + tok(y) + ' (' + p.pct + '% supply)'],
+      ['Lieka tau', tok(own) + ' (' + (own / p.supply * 100).toFixed(2) + '%)'],
+      ['Reali liquidity', usd(2 * x * p.solUsd)],
+      ['Mcap / liquidity', (p.mcapUsd / (2 * x * p.solUsd)).toFixed(0) + '×'],
+      ['Parduodamas viską gautum', sol(sellAll) + ' (ne ' + usd(p.mcapUsd * own / p.supply) + ')'],
+    ]) + '<div class="note warn" style="margin-top:10px">Testinis režimas: veikia tik Devnet. Mcap čia „popierinis“ – reali vertė lygi SOL pool\'e.</div>';
+    return;
+  }
   const depth = p.poolTokens * p.startPriceSol;
   const need = r => depth * (Math.sqrt(r) - 1) / (1 - p.feeBps / 1e4);
   $('calc').innerHTML = kv([
@@ -186,7 +203,7 @@ $('estimate').addEventListener('click', e => busy(e.target, async () => {
   const name = $('name').value.trim() || 'Test', symbol = $('symbol').value.trim() || 'TEST';
   const mintCost = draft.mint ? 0 : await C.estimateMintCost(conn, { payer: wallet, supply: p.supply, name, symbol, uri: draft.uri || $('uri').value.trim(), mutable: p.mutable });
   const poolCost = await C.estimatePoolCost(conn);
-  const total = mintCost + poolCost + p.devBuy;
+  const total = mintCost + poolCost + p.devBuy + p.twoSol;
   await refreshBal();
   const ok = wallet.bal >= total + 0.005;
   $('costOut').innerHTML = kv([
@@ -194,6 +211,7 @@ $('estimate').addEventListener('click', e => busy(e.target, async () => {
     ['Pool\'o sukūrimas', '~' + sol(poolCost)],
     ['IPFS (Pinata)', 'nemokamai'],
     ...(p.devBuy > 0 ? [['Dev buy', sol(p.devBuy)]] : []),
+    ...(p.twoSol > 0 ? [['SOL į pool\'ą (testas)', sol(p.twoSol)]] : []),
     ['Iš viso', '<b>~' + sol(total) + (S.solUsd ? ' · ' + usd(total * S.solUsd) : '') + '</b>'],
     ['Tavo balansas', `<span class="${ok ? 'good' : 'warn'}">${sol(wallet.bal || 0)} ${ok ? '✓ užtenka' : '✗ trūksta'}</span>`],
   ]) + '<div class="hint">Didžioji dalis – „rent“ depozitai sąskaitoms. Į pool\'ą SOL dėti nereikia: pool\'as vienpusis, jame tik tavo tokenai.</div>';
@@ -256,7 +274,7 @@ $('doPool').addEventListener('click', e => busy(e.target, async () => {
   if (S.net === 'mainnet' && !confirmBox(`Paleisti pool'ą MAINNET'e?\n${tok(p.poolTokens)} ${draft.symbol} į pool'ą, startinis mcap ${usd(p.mcapUsd)}.${p.lock ? '\nLiquidity bus užrakinta visam laikui.' : ''}`)) return;
   let r;
   try {
-    r = await C.createPool(conn, { payer: wallet, mint: draft.mint, poolTokens: p.poolTokens, startPriceSol: p.startPriceSol, feeBps: p.feeBps, antiSniper: p.antiSniper, lock: p.lock }, pl => { draft.pendingPool = pl; saveDraft(); });
+    r = await C.createPool(conn, { payer: wallet, mint: draft.mint, poolTokens: p.poolTokens, startPriceSol: p.startPriceSol, feeBps: p.feeBps, antiSniper: p.antiSniper, lock: p.lock, twoSidedSol: S.net === 'devnet' ? p.twoSol : 0 }, pl => { draft.pendingPool = pl; saveDraft(); });
   } catch (err) {
     const found = (draft.pendingPool && await C.accountExists(conn, draft.pendingPool)) ? draft.pendingPool : await C.findPool(conn, draft.mint);
     if (found) r = { pool: found, sig: null };

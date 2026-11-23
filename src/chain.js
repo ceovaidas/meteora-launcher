@@ -14,7 +14,7 @@ import { createNoopSigner, publicKey as umiPk, none } from '@metaplex-foundation
 import { mplTokenMetadata, createMetadataAccountV3, safeFetchMetadataFromSeeds } from '@metaplex-foundation/mpl-token-metadata';
 import { toWeb3JsInstruction } from '@metaplex-foundation/umi-web3js-adapters';
 import {
-  CpAmm, deriveCustomizablePoolAddress, getSqrtPriceFromPrice, getPriceFromSqrtPrice, MAX_SQRT_PRICE,
+  CpAmm, deriveCustomizablePoolAddress, getSqrtPriceFromPrice, getPriceFromSqrtPrice, MAX_SQRT_PRICE, MIN_SQRT_PRICE,
   getBaseFeeParams, getDynamicFeeParams, BaseFeeMode, CollectFeeMode, ActivationType,
 } from '@meteora-ag/cp-amm-sdk';
 import BN from 'bn.js';
@@ -174,15 +174,22 @@ export async function estimatePoolCost(conn) {
 
 // ---------- Pool ----------
 // startPriceSol = SOL už 1 tokeną
-export async function createPool(conn, { payer, mint, poolTokens, startPriceSol, feeBps, antiSniper, lock }, onPending) {
+export async function createPool(conn, { payer, mint, poolTokens, startPriceSol, feeBps, antiSniper, lock, twoSidedSol = 0 }, onPending) {
   const cpAmm = new CpAmm(conn);
   const tokenAMint = new PublicKey(mint);
   const initSqrtPrice = getSqrtPriceFromPrice(String(startPriceSol), DECIMALS, SOL_DECIMALS);
   const tokenAAmount = toRaw(poolTokens);
-  const liquidityDelta = cpAmm.preparePoolCreationSingleSide({
-    tokenAAmount, minSqrtPrice: initSqrtPrice, maxSqrtPrice: MAX_SQRT_PRICE, initSqrtPrice,
-    collectFeeMode: CollectFeeMode.OnlyB,
-  });
+  // Testinis dvipusis režimas (tik devnet): pilnas kainos intervalas, tokenai + SOL
+  const two = twoSidedSol > 0;
+  const tokenBAmount = two ? toRaw(Math.round(twoSidedSol * 1e3), 6) : new BN(0); // SOL -> lamports
+  const sqrtMinPrice = two ? MIN_SQRT_PRICE : initSqrtPrice;
+  const liquidityDelta = two
+    ? cpAmm.getLiquidityDelta({ maxAmountTokenA: tokenAAmount, maxAmountTokenB: tokenBAmount, sqrtPrice: initSqrtPrice,
+        sqrtMinPrice, sqrtMaxPrice: MAX_SQRT_PRICE, collectFeeMode: CollectFeeMode.OnlyB })
+    : cpAmm.preparePoolCreationSingleSide({
+        tokenAAmount, minSqrtPrice: initSqrtPrice, maxSqrtPrice: MAX_SQRT_PRICE, initSqrtPrice,
+        collectFeeMode: CollectFeeMode.OnlyB,
+      });
   const baseFee = antiSniper
     ? getBaseFeeParams({ baseFeeMode: BaseFeeMode.FeeTimeSchedulerExponential,
         feeTimeSchedulerParam: { startingFeeBps: 5000, endingFeeBps: feeBps, numberOfPeriod: 60, totalDuration: 600 } })
@@ -194,8 +201,8 @@ export async function createPool(conn, { payer, mint, poolTokens, startPriceSol,
   const { tx, pool, position } = await cpAmm.createCustomPool({
     payer, creator: payer, positionNft: positionNft.publicKey,
     tokenAMint, tokenBMint: NATIVE_MINT,
-    tokenAAmount, tokenBAmount: new BN(0),
-    sqrtMinPrice: initSqrtPrice, sqrtMaxPrice: MAX_SQRT_PRICE,
+    tokenAAmount, tokenBAmount,
+    sqrtMinPrice, sqrtMaxPrice: MAX_SQRT_PRICE,
     liquidityDelta, initSqrtPrice, poolFees,
     hasAlphaVault: false, activationType: ActivationType.Timestamp,
     collectFeeMode: CollectFeeMode.OnlyB, activationPoint: null,
