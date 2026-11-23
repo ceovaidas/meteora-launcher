@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meteora Launcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Meteora Launcher</div>
+  <div class="seg" id="net">
+    <button data-net="devnet">Devnet</button>
+    <button data-net="mainnet">Mainnet</button>
+  </div>
+</header>
+<div id="netWarn" class="banner"></div>
+
+<main>
+  <!-- 1. Wallet -->
+  <section class="card" id="s-wallet">
+    <h2><span class="n">1</span>Wallet</h2>
+    <div id="noPhantom" class="note warn" hidden>
+      Phantom nerastas. Šį puslapį reikia atidaryti <b>Phantom programėlės naršyklėje</b>.
+      <a class="btn" id="openPhantom" href="#">Atidaryti Phantom'e</a>
+    </div>
+    <button class="btn" id="connect">Prisijungti su Phantom</button>
+    <div id="walletInfo" hidden>
+      <div class="kv"><span>Adresas</span><span id="addr" class="mono"></span></div>
+      <div class="kv"><span>Balansas</span><span id="bal"></span></div>
+      <div class="row"><button class="btn ghost" id="refreshBal">Atnaujinti</button><button class="btn ghost" id="airdrop" hidden>Gauti 1 devnet SOL</button></div>
+    </div>
+    <details class="adv"><summary>RPC ir SOL kaina</summary>
+      <label for="rpc">RPC adresas</label>
+      <input id="rpc" type="text" placeholder="numatytasis">
+      <div class="hint">Mainnet'ui geriau naudoti nemokamą Helius RPC (helius.dev) – viešas RPC dažnai stringa.</div>
+      <label for="solUsd">SOL kaina, $</label>
+      <input id="solUsd" type="number" step="0.01">
+    </details>
+  </section>
+
+  <!-- 2. Coinas -->
+  <section class="card" id="s-coin">
+    <h2><span class="n">2</span>Coino informacija</h2>
+    <div class="logo-row">
+      <label class="logo" for="logo"><img id="logoPrev" alt=""><span id="logoTxt">+ Logotipas</span></label>
+      <input id="logo" type="file" accept="image/*" hidden>
+      <div class="grow">
+        <label for="name">Pavadinimas</label>
+        <input id="name" type="text" maxlength="32" placeholder="pvz. Omni Cat">
+        <label for="symbol">Tickeris</label>
+        <input id="symbol" type="text" maxlength="10" placeholder="pvz. OMNI">
+      </div>
+    </div>
+    <label for="desc">Aprašymas</label>
+    <textarea id="desc" rows="3" maxlength="500"></textarea>
+    <label for="website">Website</label><input id="website" type="url" placeholder="https://">
+    <label for="twitter">X (Twitter)</label><input id="twitter" type="url" placeholder="https://x.com/...">
+    <label for="telegram">Telegram</label><input id="telegram" type="url" placeholder="https://t.me/...">
+    <details class="adv"><summary>Pinata raktas (logotipo įkėlimui)</summary>
+      <label for="jwt">Pinata JWT</label>
+      <input id="jwt" type="password" autocomplete="off" placeholder="eyJ...">
+      <div class="hint">pinata.cloud → API Keys → New Key (pažymėk pinFileToIPFS ir pinJSONToIPFS) → nukopijuok JWT. Saugomas tik šiame telefone.</div>
+      <label for="uri">Arba jau paruoštas metadata URI</label>
+      <input id="uri" type="url" placeholder="https://...json">
+    </details>
+  </section>
+
+  <!-- 3. Parametrai -->
+  <section class="card" id="s-params">
+    <h2><span class="n">3</span>Paleidimo nustatymai</h2>
+    <label>Presetai</label>
+    <div class="row" id="presets"></div>
+    <div class="two">
+      <div><label for="supply">Supply</label><input id="supply" type="number" value="1000000000"></div>
+      <div><label for="pct">Į pool'ą, %</label><input id="pct" type="number" value="90" min="1" max="100"></div>
+    </div>
+    <div class="two">
+      <div><label for="mcap">Startinis mcap, $</label><input id="mcap" type="number" value="6500"></div>
+      <div><label for="fee">Swap fee, %</label><input id="fee" type="number" value="1" step="0.25" min="0.25" max="10"></div>
+    </div>
+    <label class="tog"><input type="checkbox" id="anti" checked><span>Anti-sniper: pirmas 10 min fee krenta nuo 50% iki tavo fee</span></label>
+    <label class="tog"><input type="checkbox" id="lock" checked><span>Užrakinti liquidity visam laikui (pirkėjai matys, kad rug negalimas; fee rinkti vis tiek galėsi)</span></label>
+    <label class="tog"><input type="checkbox" id="mutable" checked><span>Metadata galima keisti vėliau (logotipą, nuorodas). Kai kurie trackeriai tai rodo kaip įspėjimą.</span></label>
+    <div class="sum" id="calc"></div>
+  </section>
+
+  <!-- 4. Kaštai -->
+  <section class="card" id="s-cost">
+    <h2><span class="n">4</span>Kiek kainuos</h2>
+    <button class="btn ghost" id="estimate">Apskaičiuoti kaštus</button>
+    <div id="costOut"></div>
+  </section>
+
+  <!-- 5. Paleidimas -->
+  <section class="card" id="s-launch">
+    <h2><span class="n">5</span>Paleidimas</h2>
+    <div class="step" id="st-ipfs"><div><b>a) Logotipas ir metadata → IPFS</b><div class="hint" id="ipfsInfo"></div></div><button class="btn" id="doIpfs">Įkelti</button></div>
+    <div class="step" id="st-mint"><div><b>b) Sukurti coiną (mint)</b><div class="hint" id="mintInfo"></div></div><button class="btn" id="doMint">Mint</button></div>
+    <div class="step" id="st-pool"><div><b>c) Sukurti Meteora pool'ą → LIVE</b><div class="hint" id="poolInfo"></div></div><button class="btn red" id="doPool">Paleisti</button></div>
+    <button class="btn ghost" id="resetDraft">Pradėti naują coiną</button>
+  </section>
+
+  <!-- 6. Live -->
+  <section class="card" id="s-live" hidden>
+    <h2><span class="n">6</span><span class="dot"></span>Live</h2>
+    <div class="hero">
+      <div><div class="k">Mcap</div><div class="big" id="lMcap">–</div><div class="k" id="lMcapSol"></div></div>
+      <div><div class="k">Nuo starto</div><div class="big" id="lChg">–</div></div>
+    </div>
+    <div id="liveKv"></div>
+    <div class="links" id="links"></div>
+  </section>
+
+  <section class="card" id="s-mine">
+    <h2>Mano coinai</h2>
+    <div id="mine"></div>
+  </section>
+
+  <div id="toast" class="toast" hidden></div>
+</main>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
