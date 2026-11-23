@@ -28,7 +28,9 @@ input:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{
 .kv span:first-child{color:var(--mute)}
 .kv span:last-child{text-align:right;font-weight:600}
 .mono{font-family:ui-monospace,monospace;cursor:pointer}
-.note{padding:12px;border-radius:10px;background:#2a1b1a;font-size:14px;display:grid;gap:10px}
+.note{padding:12px;border-radius:10px;background:#2a1b1a;font-size:14px;line-height:1.5}
+.note .btn{display:flex;width:100%;margin-top:10px}
+[hidden]{display:none!important}
 .good{color:var(--ok)}.warn{color:var(--warn)}
 details.adv{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
 summary{cursor:pointer;color:var(--mute);font-size:14px;font-weight:600;min-height:32px;display:flex;align-items:center}
