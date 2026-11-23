@@ -274,14 +274,14 @@ async function useMint(mint, meta = {}) {
   if (!wallet) throw new Error('Pirma prisijunk su Phantom.');
   const m = await C.readMint(conn, mint, wallet);
   if (m.decimals !== C.DECIMALS) throw new Error('Šis coinas turi ' + m.decimals + ' decimals, programa palaiko tik ' + C.DECIMALS + '.');
-  if (m.mine <= 0) throw new Error('Tavo wallet\'e šio coino nėra.');
+  if (m.mine === 0) throw new Error('Tavo pagrindinėje šio coino sąskaitoje tokenų nerasta. Patikrink, ar įklijavai teisingą CA (Phantom → coinas → Token address).');
   draft.mint = mint; draft.supply = m.supply; draft.pendingMint = null;
   draft.name = meta.name || draft.name || $('name').value.trim();
   draft.symbol = meta.symbol || draft.symbol || $('symbol').value.trim().toUpperCase();
   if (meta.uri) draft.uri = meta.uri;
   $('supply').value = m.supply; saveForm(); calc();
   saveDraft(); renderSteps();
-  toast((draft.symbol || 'Coinas') + ' pasirinktas: ' + tok(m.mine) + ' tavo wallet\'e. Gali kurti pool\'ą.');
+  toast((draft.symbol || 'Coinas') + ' pasirinktas' + (m.mine ? ': ' + tok(m.mine) + ' tavo wallet\'e' : '') + '. Gali kurti pool\'ą.');
 }
 $('recBtn').addEventListener('click', e => busy(e.target, async () => {
   const mint = $('recMint').value.trim();

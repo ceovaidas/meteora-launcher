@@ -238,8 +238,12 @@ export async function readMint(conn, mint, owner) {
   if (!d || d.type !== 'mint') throw new Error('Šis adresas nėra tokeno CA.');
   const dec = d.info.decimals;
   const supply = Number(BigInt(d.info.supply) / 10n ** BigInt(dec));
-  let mine = 0;
-  try { const ata = getAssociatedTokenAddressSync(new PublicKey(mint), owner); mine = Number((await conn.getTokenAccountBalance(ata)).value.uiAmount || 0); } catch {}
+  let mine = null; // null = nepavyko nuskaityti
+  try {
+    const ata = getAssociatedTokenAddressSync(new PublicKey(mint), owner);
+    const a = await conn.getParsedAccountInfo(ata, 'confirmed');
+    mine = a.value ? Number(a.value.data?.parsed?.info?.tokenAmount?.uiAmount || 0) : 0;
+  } catch (e) { console.warn('balansas nenuskaitytas', e); }
   return { decimals: dec, supply, mintAuthority: d.info.mintAuthority, freezeAuthority: d.info.freezeAuthority, mine };
 }
 
