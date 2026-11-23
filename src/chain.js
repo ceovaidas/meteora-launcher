@@ -55,17 +55,35 @@ export async function connectWallet() {
   return new PublicKey(r.publicKey.toString());
 }
 
-async function signAndSend(conn, tx, extraSigners = []) {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function signAndSend(conn, tx, extraSigners = [], onSent) {
   const p = getProvider();
   const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
   tx.recentBlockhash = blockhash;
   // Phantom pasirašo pirmas, tada papildomi raktai (Phantom rekomendacija)
   const signed = await p.signTransaction(tx);
   for (const kp of extraSigners) signed.partialSign(kp);
-  const sig = await conn.sendRawTransaction(signed.serialize(), { skipPreflight: false, maxRetries: 5 });
-  const res = await conn.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
-  if (res.value.err) throw new Error('Transakcija nepavyko: ' + JSON.stringify(res.value.err));
-  return sig;
+  const raw = signed.serialize();
+  const sig = await conn.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+  onSent && onSent(sig);
+  // Laukiam patvirtinimo iki ~2 min, periodiškai persiunčiam
+  const t0 = Date.now(); let n = 0;
+  while (Date.now() - t0 < 120000) {
+    const st = (await conn.getSignatureStatuses([sig], { searchTransactionHistory: true })).value[0];
+    if (st) {
+      if (st.err) throw new Error('Transakcija nepavyko: ' + JSON.stringify(st.err));
+      if (st.confirmationStatus === 'confirmed' || st.confirmationStatus === 'finalized') return sig;
+    } else {
+      const h = await conn.getBlockHeight('confirmed').catch(() => 0);
+      if (h > lastValidBlockHeight + 30) break; // tikrai pasibaigė
+      if (++n % 2 === 0) conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }).catch(() => {});
+    }
+    await sleep(2500);
+  }
+  const st = (await conn.getSignatureStatuses([sig], { searchTransactionHistory: true })).value[0];
+  if (st && !st.err) return sig;
+  throw new Error('Transakcija nepatvirtinta tinkle. Patikrink Phantom istoriją – jei ji ten yra, spausk „Patikrinti“.');
 }
 
 function budget(units = 400_000) {
@@ -108,8 +126,9 @@ async function buildMintTx(conn, { payer, mint, supply, name, symbol, uri, mutab
   return tx;
 }
 
-export async function mintToken(conn, opts) {
+export async function mintToken(conn, opts, onPending) {
   const mintKp = Keypair.generate();
+  onPending && onPending(mintKp.publicKey.toBase58());
   const tx = await buildMintTx(conn, { ...opts, mint: mintKp.publicKey });
   const sig = await signAndSend(conn, tx, [mintKp]);
   return { mint: mintKp.publicKey.toBase58(), sig };
@@ -148,7 +167,7 @@ export async function estimatePoolCost(conn) {
 
 // ---------- Pool ----------
 // startPriceSol = SOL už 1 tokeną
-export async function createPool(conn, { payer, mint, poolTokens, startPriceSol, feeBps, antiSniper, lock }) {
+export async function createPool(conn, { payer, mint, poolTokens, startPriceSol, feeBps, antiSniper, lock }, onPending) {
   const cpAmm = new CpAmm(conn);
   const tokenAMint = new PublicKey(mint);
   const initSqrtPrice = getSqrtPriceFromPrice(String(startPriceSol), DECIMALS, SOL_DECIMALS);
@@ -176,6 +195,7 @@ export async function createPool(conn, { payer, mint, poolTokens, startPriceSol,
     tokenAProgram: TOKEN_PROGRAM_ID, tokenBProgram: TOKEN_PROGRAM_ID,
     isLockLiquidity: lock,
   });
+  onPending && onPending(pool.toBase58());
   const full = new Transaction().add(...budget(400_000), ...tx.instructions);
   full.feePayer = payer;
   const sig = await signAndSend(conn, full, [positionNft]);
@@ -204,6 +224,23 @@ export async function fetchLive(conn, { mint, pool, owner, supply }) {
     poolSol: Number(bBal.value.uiAmount || 0),
     mine, minePct: mine / supply * 100,
   };
+}
+
+// Ar sąskaita egzistuoja tinkle
+export async function accountExists(conn, addr) {
+  try { return !!(await conn.getAccountInfo(new PublicKey(addr), 'confirmed')); } catch { return false; }
+}
+
+// Esamo coino informacija (atkūrimui)
+export async function readMint(conn, mint, owner) {
+  const info = await conn.getParsedAccountInfo(new PublicKey(mint), 'confirmed');
+  const d = info.value?.data?.parsed;
+  if (!d || d.type !== 'mint') throw new Error('Šis adresas nėra tokeno CA.');
+  const dec = d.info.decimals;
+  const supply = Number(BigInt(d.info.supply) / 10n ** BigInt(dec));
+  let mine = 0;
+  try { const ata = getAssociatedTokenAddressSync(new PublicKey(mint), owner); mine = Number((await conn.getTokenAccountBalance(ata)).value.uiAmount || 0); } catch {}
+  return { decimals: dec, supply, mintAuthority: d.info.mintAuthority, freezeAuthority: d.info.freezeAuthority, mine };
 }
 
 export async function getSolBalance(conn, pk) {
