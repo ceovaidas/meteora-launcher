@@ -21,10 +21,22 @@ import BN from 'bn.js';
 
 export const DECIMALS = 6;
 export const SOL_DECIMALS = 9;
+// Keli nemokami RPC – naršyklėje naudojamas pirmas veikiantis
 export const DEFAULT_RPC = {
-  mainnet: 'https://api.mainnet-beta.solana.com',
-  devnet: 'https://api.devnet.solana.com',
+  mainnet: ['https://solana-rpc.publicnode.com', 'https://solana.drpc.org', 'https://api.mainnet-beta.solana.com'],
+  devnet: ['https://api.devnet.solana.com', 'https://solana-devnet-rpc.publicnode.com'],
 };
+
+export async function pickRpc(list) {
+  for (const url of list) {
+    try {
+      const c = new Connection(url, 'confirmed');
+      await Promise.race([c.getLatestBlockhash(), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 6000))]);
+      return url;
+    } catch (e) { console.warn('RPC neveikia:', url, e.message); }
+  }
+  return null;
+}
 const PRIORITY_MICROLAMPORTS = 200_000; // ~0.00008 SOL už 400k CU
 
 export function makeConnection(rpc) {

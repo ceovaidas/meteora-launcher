@@ -40,8 +40,20 @@ function saveSettings() { store.set('ml-settings', S); }
 function saveDraft() { store.set(draftKey(), draft); }
 
 // ---------- tinklas ----------
-function rpcUrl() { return (S.rpc[S.net] || '').trim() || C.DEFAULT_RPC[S.net]; }
-function setNet(n) {
+let autoRpc = {};
+function rpcUrl() { return (S.rpc[S.net] || '').trim() || autoRpc[S.net] || C.DEFAULT_RPC[S.net][0]; }
+async function ensureRpc() {
+  if ((S.rpc[S.net] || '').trim() || autoRpc[S.net]) return;
+  $('rpcInfo').textContent = 'Ieškau veikiančio RPC…';
+  const url = await C.pickRpc(C.DEFAULT_RPC[S.net]);
+  if (url) { autoRpc[S.net] = url; conn = C.makeConnection(url); }
+  showRpc(url ? '' : 'Nė vienas nemokamas RPC neatsako. Įvesk savo (pvz. Helius) žemiau.');
+}
+function showRpc(err) {
+  $('rpcInfo').textContent = err || ('RPC: ' + new URL(rpcUrl()).host);
+  $('rpcInfo').className = 'hint' + (err ? ' warn' : '');
+}
+async function setNet(n) {
   S.net = n; saveSettings();
   conn = C.makeConnection(rpcUrl());
   draft = store.get(draftKey(), {});
@@ -50,20 +62,34 @@ function setNet(n) {
   $('netWarn').textContent = n === 'mainnet' ? 'MAINNET – tikri pinigai' : 'DEVNET – testinis tinklas, pinigai netikri';
   $('netWarn').className = 'banner ' + n;
   $('airdrop').hidden = n !== 'devnet';
-  refreshBal(); renderSteps(); renderMine();
+  renderSteps(); renderMine();
+  await ensureRpc();
+  refreshBal();
 }
 document.querySelectorAll('[data-net]').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.net === 'mainnet' && S.net !== 'mainnet') toast('Perjungta į MAINNET – čia naudojami tikri SOL.');
   setNet(b.dataset.net);
 }));
-$('rpc').addEventListener('change', () => { S.rpc[S.net] = $('rpc').value.trim(); saveSettings(); conn = C.makeConnection(rpcUrl()); refreshBal(); });
+$('rpc').addEventListener('change', () => { S.rpc[S.net] = $('rpc').value.trim(); saveSettings(); conn = C.makeConnection(rpcUrl()); showRpc(); refreshBal(); });
 $('solUsd').addEventListener('input', () => { S.solUsd = +$('solUsd').value || 0; saveSettings(); calc(); });
 
 // ---------- wallet ----------
 async function refreshBal() {
   if (!wallet || !conn) return;
   try { const b = await C.getSolBalance(conn, wallet); $('bal').textContent = sol(b) + (S.solUsd ? ' (' + usd(b * S.solUsd) + ')' : ''); wallet.bal = b; }
-  catch (e) { $('bal').textContent = 'nepavyko (RPC?)'; }
+  catch (e) {
+    console.warn(e);
+    // bandome kitą RPC, jei vartotojas nenustatė savo
+    if (!(S.rpc[S.net] || '').trim() && !refreshBal.retry) {
+      refreshBal.retry = true; autoRpc[S.net] = null;
+      const list = C.DEFAULT_RPC[S.net].filter(u => u !== conn.rpcEndpoint);
+      const url = await C.pickRpc(list);
+      if (url) { autoRpc[S.net] = url; conn = C.makeConnection(url); showRpc(); refreshBal.retry = false; return refreshBal(); }
+      refreshBal.retry = false;
+    }
+    $('bal').textContent = 'nepavyko – žr. „RPC ir SOL kaina“';
+    showRpc('RPC neatsako. Įvesk savo RPC (pvz. nemokamą Helius) žemiau.');
+  }
 }
 function showWallet() {
   $('connect').hidden = true; $('walletInfo').hidden = false;
