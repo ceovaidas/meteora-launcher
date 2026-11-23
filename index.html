@@ -60,9 +60,11 @@
     <label for="website">Website</label><input id="website" type="url" placeholder="https://">
     <label for="twitter">X (Twitter)</label><input id="twitter" type="url" placeholder="https://x.com/...">
     <label for="telegram">Telegram</label><input id="telegram" type="url" placeholder="https://t.me/...">
-    <details class="adv"><summary>Pinata raktas (logotipo įkėlimui)</summary>
+    <details class="adv" id="pinataBox"><summary>Pinata raktas (logotipo įkėlimui) <span id="jwtBadge"></span></summary>
       <label for="jwt">Pinata JWT</label>
       <input id="jwt" type="password" autocomplete="off" placeholder="eyJ...">
+      <div class="row"><button class="btn ghost" id="jwtTest">Patikrinti raktą</button></div>
+      <div id="jwtStatus" class="hint"></div>
       <div class="hint">pinata.cloud → API Keys → New Key (pažymėk pinFileToIPFS ir pinJSONToIPFS) → nukopijuok JWT. Saugomas tik šiame telefone.</div>
       <label for="uri">Arba jau paruoštas metadata URI</label>
       <input id="uri" type="url" placeholder="https://...json">

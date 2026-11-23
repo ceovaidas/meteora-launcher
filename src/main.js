@@ -111,13 +111,25 @@ function loadForm() {
   FORM.forEach(k => { if (f[k] !== undefined) $(k).value = f[k]; });
   CHECKS.forEach(k => { if (f[k] !== undefined) $(k).checked = f[k]; });
   $('jwt').value = S.jwt || '';
+  jwtBadge();
 }
 function saveForm() {
   const f = {}; FORM.forEach(k => f[k] = $(k).value); CHECKS.forEach(k => f[k] = $(k).checked);
   store.set('ml-form', f);
 }
 [...FORM, ...CHECKS].forEach(k => $(k).addEventListener('input', () => { saveForm(); calc(); }));
-$('jwt').addEventListener('change', () => { S.jwt = $('jwt').value.trim(); saveSettings(); });
+function jwtBadge() {
+  $('jwtBadge').textContent = S.jwt ? '· išsaugotas ✓' : '· neįvestas';
+  $('jwtBadge').className = S.jwt ? 'good' : 'warn';
+}
+$('jwt').addEventListener('input', () => { S.jwt = $('jwt').value.trim(); saveSettings(); jwtBadge(); $('jwtStatus').textContent = S.jwt ? 'Išsaugota šiame telefone.' : ''; });
+$('jwtTest').addEventListener('click', e => busy(e.target, async () => {
+  S.jwt = $('jwt').value.trim(); saveSettings(); jwtBadge();
+  if (!S.jwt) throw new Error('Pirma įklijuok JWT.');
+  const ok = await C.testPinata(S.jwt);
+  $('jwtStatus').textContent = ok ? '✓ Raktas veikia – Pinata jį priėmė.' : '✗ Pinata rakto nepriima. Patikrink, ar nukopijavai visą JWT (prasideda eyJ...).';
+  $('jwtStatus').className = 'hint ' + (ok ? 'good' : 'warn');
+}));
 $('logo').addEventListener('change', () => {
   logoFile = $('logo').files[0] || null;
   if (logoFile) { $('logoPrev').src = URL.createObjectURL(logoFile); $('logoTxt').hidden = true; draft.uri = null; saveDraft(); renderSteps(); }

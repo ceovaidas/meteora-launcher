@@ -238,6 +238,13 @@ export async function uploadToPinata(jwt, { file, meta }) {
   return { uri: GATEWAY + (await r2.json()).IpfsHash, image };
 }
 
+export async function testPinata(jwt) {
+  const r = await fetch('https://api.pinata.cloud/data/testAuthentication', { headers: { Authorization: 'Bearer ' + jwt } });
+  if (r.ok) return true;
+  if (r.status === 401 || r.status === 403) return false;
+  throw new Error('Pinata neatsako (' + r.status + ')');
+}
+
 export async function fetchSolUsd() {
   try {
     const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
