@@ -37,7 +37,7 @@ export async function pickRpc(list) {
   }
   return null;
 }
-const PRIORITY_MICROLAMPORTS = 200_000; // ~0.00008 SOL už 400k CU
+const PRIORITY_MICROLAMPORTS = 600_000; // ~0.00008 SOL už 400k CU
 
 export function makeConnection(rpc) {
   return new Connection(rpc, 'confirmed');
@@ -61,11 +61,18 @@ async function signAndSend(conn, tx, extraSigners = [], onSent) {
   const p = getProvider();
   const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
   tx.recentBlockhash = blockhash;
-  // Phantom pasirašo pirmas, tada papildomi raktai (Phantom rekomendacija)
-  const signed = await p.signTransaction(tx);
-  for (const kp of extraSigners) signed.partialSign(kp);
-  const raw = signed.serialize();
-  const sig = await conn.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+  let sig, raw = null;
+  if (p.signAndSendTransaction) {
+    // Phantom pats siunčia per savo RPC (patikimiau nei viešas RPC)
+    for (const kp of extraSigners) tx.partialSign(kp);
+    const res = await p.signAndSendTransaction(tx, { maxRetries: 5, skipPreflight: false });
+    sig = res.signature || res;
+  } else {
+    const signed = await p.signTransaction(tx);
+    for (const kp of extraSigners) signed.partialSign(kp);
+    raw = signed.serialize();
+    sig = await conn.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+  }
   onSent && onSent(sig);
   // Laukiam patvirtinimo iki ~2 min, periodiškai persiunčiam
   const t0 = Date.now(); let n = 0;
@@ -77,13 +84,13 @@ async function signAndSend(conn, tx, extraSigners = [], onSent) {
     } else {
       const h = await conn.getBlockHeight('confirmed').catch(() => 0);
       if (h > lastValidBlockHeight + 30) break; // tikrai pasibaigė
-      if (++n % 2 === 0) conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }).catch(() => {});
+      if (raw && ++n % 2 === 0) conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }).catch(() => {});
     }
     await sleep(2500);
   }
   const st = (await conn.getSignatureStatuses([sig], { searchTransactionHistory: true })).value[0];
   if (st && !st.err) return sig;
-  throw new Error('Transakcija nepatvirtinta tinkle. Patikrink Phantom istoriją – jei ji ten yra, spausk „Patikrinti“.');
+  throw new Error('Transakcija nepatvirtinta tinkle per 2 min. Patikrink Phantom istoriją (Recent activity). Jei ten jos nėra – bandyk dar kartą.');
 }
 
 function budget(units = 400_000) {
@@ -200,6 +207,32 @@ export async function createPool(conn, { payer, mint, poolTokens, startPriceSol,
   full.feePayer = payer;
   const sig = await signAndSend(conn, full, [positionNft]);
   return { pool: pool.toBase58(), position: position.toBase58(), sig };
+}
+
+// ---------- Dev buy (SOL -> tokenas) ----------
+export async function devBuy(conn, { payer, pool, solAmount, slippagePct = 15 }) {
+  const cpAmm = new CpAmm(conn);
+  let st, tries = 0;
+  while (!st) { // ką tik sukurtas pool'as RPC gali dar nematyti
+    try { st = await cpAmm.fetchPoolState(new PublicKey(pool)); }
+    catch (e) { if (++tries > 10) throw new Error('Pool\'o dar nesimato tinkle, pabandyk po minutės.'); await sleep(2000); }
+  }
+  const amountIn = toRaw(solAmount * 1e3, 6); // SOL -> lamports (solAmount*1e9)
+  const [slot, ] = await Promise.all([conn.getSlot('confirmed')]);
+  const quote = cpAmm.getQuote({
+    inAmount: amountIn, inputTokenMint: NATIVE_MINT, slippage: slippagePct, poolState: st,
+    currentTime: Math.floor(Date.now() / 1000), currentSlot: slot, tokenADecimal: DECIMALS, tokenBDecimal: SOL_DECIMALS,
+  });
+  const tx = await cpAmm.swap({
+    payer, pool: new PublicKey(pool), inputTokenMint: NATIVE_MINT, outputTokenMint: st.tokenAMint,
+    amountIn, minimumAmountOut: quote.minSwapOutAmount,
+    tokenAMint: st.tokenAMint, tokenBMint: st.tokenBMint, tokenAVault: st.tokenAVault, tokenBVault: st.tokenBVault,
+    tokenAProgram: TOKEN_PROGRAM_ID, tokenBProgram: TOKEN_PROGRAM_ID, referralTokenAccount: null, poolState: st,
+  });
+  const full = new Transaction().add(...budget(300_000), ...tx.instructions);
+  full.feePayer = payer;
+  const sig = await signAndSend(conn, full);
+  return { sig, expectedOut: Number(quote.swapOutAmount.toString()) / 10 ** DECIMALS };
 }
 
 // ---------- Live ----------

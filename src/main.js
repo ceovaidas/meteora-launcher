@@ -15,7 +15,7 @@ let wallet = null, conn = null, logoFile = null, liveTimer = null, liveCoin = nu
 const draftKey = () => 'ml-draft-' + S.net;
 let draft = store.get(draftKey(), {});
 let coins = store.get('ml-coins', []);
-const FORM = ['name', 'symbol', 'desc', 'website', 'twitter', 'telegram', 'uri', 'supply', 'pct', 'mcap', 'fee'];
+const FORM = ['name', 'symbol', 'desc', 'website', 'twitter', 'telegram', 'uri', 'supply', 'pct', 'mcap', 'fee', 'devbuy'];
 const CHECKS = ['anti', 'lock', 'mutable'];
 
 // ---------- formatai ----------
@@ -143,6 +143,7 @@ function params() {
   const startPriceSol = solUsd ? mcapUsd / solUsd / supply : 0;
   const poolTokens = Math.floor(supply * pct / 100);
   return { supply, pct, mcapUsd, solUsd, startPriceSol, poolTokens, mine: supply - poolTokens,
+    devBuy: Math.max(0, +$('devbuy').value || 0),
     feeBps: Math.round((+$('fee').value || 1) * 100), antiSniper: $('anti').checked, lock: $('lock').checked, mutable: $('mutable').checked };
 }
 
@@ -171,7 +172,11 @@ function calc() {
     ['Pool\'o gylis (virtualus)', sol(depth)],
     ['Iki ×2 mcap pirkėjams reikia', sol(need(2)) + ' · ' + usd(need(2) * p.solUsd)],
     ['Iki ×10 mcap', sol(need(10)) + ' · ' + usd(need(10) * p.solUsd)],
-  ]);
+    ...(p.devBuy > 0 ? (() => {
+      const f = (p.antiSniper ? 0.5 : p.feeBps / 1e4), x = depth + p.devBuy * (1 - f), r = (x / depth) ** 2;
+      return [['Po dev buy mcap', usd(p.mcapUsd * r) + ' · gausi ~' + tok(p.poolTokens * (1 - depth / x))]];
+    })() : []),
+  ]) + (p.devBuy > 0 && p.antiSniper ? '<div class="note warn" style="margin-top:10px">Įjungtas anti-sniper: pirmas 10 min pirkimų fee iki 50%, tai liečia ir tavo dev buy. Dev buy metu jį geriau išjungti.</div>' : '');
 }
 
 // ---------- kaštai ----------
@@ -181,13 +186,14 @@ $('estimate').addEventListener('click', e => busy(e.target, async () => {
   const name = $('name').value.trim() || 'Test', symbol = $('symbol').value.trim() || 'TEST';
   const mintCost = draft.mint ? 0 : await C.estimateMintCost(conn, { payer: wallet, supply: p.supply, name, symbol, uri: draft.uri || $('uri').value.trim(), mutable: p.mutable });
   const poolCost = await C.estimatePoolCost(conn);
-  const total = mintCost + poolCost;
+  const total = mintCost + poolCost + p.devBuy;
   await refreshBal();
   const ok = wallet.bal >= total + 0.005;
   $('costOut').innerHTML = kv([
     ['Coino sukūrimas (mint + metadata)', draft.mint ? 'jau padaryta' : sol(mintCost) + ' · tiksliai pagal simuliaciją'],
     ['Pool\'o sukūrimas', '~' + sol(poolCost)],
     ['IPFS (Pinata)', 'nemokamai'],
+    ...(p.devBuy > 0 ? [['Dev buy', sol(p.devBuy)]] : []),
     ['Iš viso', '<b>~' + sol(total) + (S.solUsd ? ' · ' + usd(total * S.solUsd) : '') + '</b>'],
     ['Tavo balansas', `<span class="${ok ? 'good' : 'warn'}">${sol(wallet.bal || 0)} ${ok ? '✓ užtenka' : '✗ trūksta'}</span>`],
   ]) + '<div class="hint">Didžioji dalis – „rent“ depozitai sąskaitoms. Į pool\'ą SOL dėti nereikia: pool\'as vienpusis, jame tik tavo tokenai.</div>';
@@ -264,7 +270,14 @@ $('doPool').addEventListener('click', e => busy(e.target, async () => {
     poolTokens: p.poolTokens, startPriceSol: p.startPriceSol, created: Date.now(), spent, image: draft.image };
   coins.unshift(coin); store.set('ml-coins', coins);
   renderSteps(); renderMine(); openLive(coin);
-  toast('LIVE! ' + draft.symbol + ' pool\'as sukurtas');
+  toast('LIVE! ' + draft.symbol + ' pool\'as sukurtas' + (p.devBuy > 0 ? '. Dabar patvirtink dev buy Phantom\'e.' : ''));
+  if (p.devBuy > 0) {
+    try {
+      const b = await C.devBuy(conn, { payer: wallet, pool: r.pool, solAmount: p.devBuy });
+      toast('Dev buy atliktas: ~' + tok(b.expectedOut) + ' ' + draft.symbol);
+      refreshBal(); tick();
+    } catch (err) { toast('Pool\'as LIVE, bet dev buy nepavyko: ' + (err.message || err) + '. Gali pirkti apačioje „Pirkti už SOL“.', true); }
+  }
 }));
 
 // Vietoj confirm() – Phantom naršyklėje jis veikia, bet laikom paprastą
@@ -338,6 +351,17 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-copy]'); if (!b) return;
   navigator.clipboard?.writeText(b.dataset.copy).then(() => toast('CA nukopijuotas: ' + short(b.dataset.copy)), () => toast(b.dataset.copy));
 });
+$('buyMore').addEventListener('click', e => busy(e.target, async () => {
+  if (!wallet) throw new Error('Pirma prisijunk su Phantom.');
+  if (!liveCoin) throw new Error('Pasirink coiną.');
+  const amt = +$('buyAmt').value || 0;
+  if (amt <= 0) throw new Error('Įvesk SOL kiekį.');
+  if (liveCoin.net === 'mainnet' && !confirmBox('Pirkti ' + liveCoin.symbol + ' už ' + amt + ' SOL?')) return;
+  const b = await C.devBuy(conn, { payer: wallet, pool: liveCoin.pool, solAmount: amt });
+  toast('Nupirkta ~' + tok(b.expectedOut) + ' ' + liveCoin.symbol);
+  refreshBal(); tick();
+}));
+
 function openLive(c) {
   liveCoin = c; $('s-live').hidden = false; $('links').innerHTML = links(c);
   if (c.net !== S.net) setNet(c.net);

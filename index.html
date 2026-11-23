@@ -84,6 +84,9 @@
       <div><label for="mcap">Startinis mcap, $</label><input id="mcap" type="number" value="6500"></div>
       <div><label for="fee">Swap fee, %</label><input id="fee" type="number" value="1" step="0.25" min="0.25" max="10"></div>
     </div>
+    <label for="devbuy">Dev buy iškart po paleidimo, SOL</label>
+    <input id="devbuy" type="number" value="0" min="0" step="0.05">
+    <div class="hint">0 = nepirkti. Bus antras patvirtinimas Phantom'e.</div>
     <label class="tog"><input type="checkbox" id="anti" checked><span>Anti-sniper: pirmas 10 min fee krenta nuo 50% iki tavo fee</span></label>
     <label class="tog"><input type="checkbox" id="lock" checked><span>Užrakinti liquidity visam laikui (pirkėjai matys, kad rug negalimas; fee rinkti vis tiek galėsi)</span></label>
     <label class="tog"><input type="checkbox" id="mutable" checked><span>Metadata galima keisti vėliau (logotipą, nuorodas). Kai kurie trackeriai tai rodo kaip įspėjimą.</span></label>
@@ -124,6 +127,7 @@
     </div>
     <div id="liveKv"></div>
     <div class="links" id="links"></div>
+    <div class="buyrow"><input id="buyAmt" type="number" value="0.1" min="0.001" step="0.05"><button class="btn" id="buyMore">Pirkti už SOL</button></div>
   </section>
 
   <section class="card" id="s-mine">

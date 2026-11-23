@@ -67,3 +67,4 @@ summary{cursor:pointer;color:var(--mute);font-size:14px;font-weight:600;min-heig
 .btn.sm{min-height:36px;padding:6px 12px;font-size:13px}
 #walletTokens{margin-top:10px}
 #walletTokens .coin b{margin-right:4px}
+.buyrow{display:flex;gap:8px;margin-top:12px}.buyrow input{flex:1}
