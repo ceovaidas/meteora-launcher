@@ -64,7 +64,7 @@ async function setNet(n) {
   $('airdrop').hidden = n !== 'devnet';
   renderSteps(); renderMine();
   await ensureRpc();
-  refreshBal(); checkPending();
+  refreshBal(); checkPending(); loadWalletTokens();
 }
 document.querySelectorAll('[data-net]').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.net === 'mainnet' && S.net !== 'mainnet') toast('Perjungta į MAINNET – čia naudojami tikri SOL.');
@@ -93,7 +93,7 @@ async function refreshBal() {
 }
 function showWallet() {
   $('connect').hidden = true; $('walletInfo').hidden = false;
-  $('addr').textContent = short(wallet.toBase58()); refreshBal();
+  $('addr').textContent = short(wallet.toBase58()); refreshBal(); loadWalletTokens();
 }
 $('connect').addEventListener('click', e => busy(e.target, async () => { wallet = await C.connectWallet(); showWallet(); }));
 $('refreshBal').addEventListener('click', refreshBal);
@@ -270,20 +270,44 @@ $('doPool').addEventListener('click', e => busy(e.target, async () => {
 // Vietoj confirm() – Phantom naršyklėje jis veikia, bet laikom paprastą
 function confirmBox(msg) { return window.confirm(msg); }
 
-$('recBtn').addEventListener('click', e => busy(e.target, async () => {
+async function useMint(mint, meta = {}) {
   if (!wallet) throw new Error('Pirma prisijunk su Phantom.');
-  const mint = $('recMint').value.trim();
-  if (!mint) throw new Error('Įklijuok coino CA.');
   const m = await C.readMint(conn, mint, wallet);
   if (m.decimals !== C.DECIMALS) throw new Error('Šis coinas turi ' + m.decimals + ' decimals, programa palaiko tik ' + C.DECIMALS + '.');
   if (m.mine <= 0) throw new Error('Tavo wallet\'e šio coino nėra.');
   draft.mint = mint; draft.supply = m.supply; draft.pendingMint = null;
-  draft.name = draft.name || $('name').value.trim(); draft.symbol = draft.symbol || $('symbol').value.trim().toUpperCase();
+  draft.name = meta.name || draft.name || $('name').value.trim();
+  draft.symbol = meta.symbol || draft.symbol || $('symbol').value.trim().toUpperCase();
+  if (meta.uri) draft.uri = meta.uri;
   $('supply').value = m.supply; saveForm(); calc();
   saveDraft(); renderSteps();
-  $('recover').open = false;
-  toast('Coinas rastas: ' + tok(m.mine) + ' tavo wallet\'e. Gali kurti pool\'ą.');
+  toast((draft.symbol || 'Coinas') + ' pasirinktas: ' + tok(m.mine) + ' tavo wallet\'e. Gali kurti pool\'ą.');
+}
+$('recBtn').addEventListener('click', e => busy(e.target, async () => {
+  const mint = $('recMint').value.trim();
+  if (!mint) throw new Error('Įklijuok coino CA.');
+  await useMint(mint);
 }));
+let walletTokens = [];
+async function loadWalletTokens() {
+  if (!wallet || draft.mint) return;
+  $('walletTokens').innerHTML = '<div class="hint">Kraunu…</div>';
+  try {
+    walletTokens = await C.listWalletTokens(conn, wallet);
+    const pooled = new Set(coins.filter(c => c.net === S.net).map(c => c.mint));
+    const list = walletTokens.filter(t => t.decimals === C.DECIMALS);
+    $('walletTokens').innerHTML = list.length ? list.map((t, i) => `<button class="coin" data-wt="${walletTokens.indexOf(t)}">
+      <span class="ph"></span><span><b>${esc(t.symbol || '?')}</b>${esc(t.name || short(t.mint))}<small>${tok(t.amount)} · ${short(t.mint)}${pooled.has(t.mint) ? ' · jau turi pool\'ą' : ''}</small></span></button>`).join('')
+      : '<div class="hint">Tinkamų coinų wallet\'e nerasta.</div>';
+  } catch (e) { console.warn(e); $('walletTokens').innerHTML = '<div class="hint warn">Nepavyko nuskaityti wallet\'o (RPC). Spausk „Atnaujinti“ arba įvesk CA ranka.</div>'; }
+}
+$('walletTokens').addEventListener('click', e => {
+  const b = e.target.closest('[data-wt]'); if (!b) return;
+  const t = walletTokens[+b.dataset.wt];
+  b.disabled = true; b.style.opacity = .5;
+  useMint(t.mint, t).catch(err => toast(err.message || String(err), true)).finally(() => { b.disabled = false; b.style.opacity = ''; });
+});
+$('recRefresh').addEventListener('click', loadWalletTokens);
 
 // Jei mint'as liko „pakibęs“ – patikrinam tinkle
 async function checkPending() {
@@ -294,7 +318,7 @@ async function checkPending() {
 
 $('resetDraft').addEventListener('click', () => {
   if (draft.mint && !draft.pool && !confirmBox('Coinas sukurtas, bet pool\'as dar ne. Tikrai pradėti iš naujo? (Sukurtą coiną rasi Phantom\'e)')) return;
-  draft = {}; saveDraft(); logoFile = null; $('logoPrev').removeAttribute('src'); $('logoTxt').hidden = false; renderSteps();
+  draft = {}; saveDraft(); logoFile = null; setTimeout(loadWalletTokens); $('logoPrev').removeAttribute('src'); $('logoTxt').hidden = false; renderSteps();
 });
 
 // ---------- live ----------

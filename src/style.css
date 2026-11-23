@@ -61,3 +61,9 @@ summary{cursor:pointer;color:var(--mute);font-size:14px;font-weight:600;min-heig
 .toast{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));max-width:600px;margin:0 auto;padding:14px 16px;border-radius:12px;background:var(--ink);color:var(--bg);font-weight:600;z-index:10;white-space:pre-wrap;box-shadow:0 10px 30px rgba(0,0,0,.4)}
 .toast.err{background:var(--red);color:#fff}
 @media(max-width:400px){.step{flex-direction:column;align-items:stretch}.step .btn{width:100%}}
+
+#recover{padding:12px 0;border-bottom:1px solid var(--line)}
+.rec-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.btn.sm{min-height:36px;padding:6px 12px;font-size:13px}
+#walletTokens{margin-top:10px}
+#walletTokens .coin b{margin-right:4px}

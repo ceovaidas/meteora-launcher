@@ -11,7 +11,7 @@ import {
 } from '@solana/spl-token';
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
 import { createNoopSigner, publicKey as umiPk, none } from '@metaplex-foundation/umi';
-import { mplTokenMetadata, createMetadataAccountV3 } from '@metaplex-foundation/mpl-token-metadata';
+import { mplTokenMetadata, createMetadataAccountV3, safeFetchMetadataFromSeeds } from '@metaplex-foundation/mpl-token-metadata';
 import { toWeb3JsInstruction } from '@metaplex-foundation/umi-web3js-adapters';
 import {
   CpAmm, getSqrtPriceFromPrice, getPriceFromSqrtPrice, MAX_SQRT_PRICE,
@@ -241,6 +241,23 @@ export async function readMint(conn, mint, owner) {
   let mine = 0;
   try { const ata = getAssociatedTokenAddressSync(new PublicKey(mint), owner); mine = Number((await conn.getTokenAccountBalance(ata)).value.uiAmount || 0); } catch {}
   return { decimals: dec, supply, mintAuthority: d.info.mintAuthority, freezeAuthority: d.info.freezeAuthority, mine };
+}
+
+// Visi tokenai wallet'e (su pavadinimais iš metadata)
+export async function listWalletTokens(conn, owner) {
+  const res = await conn.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }, 'confirmed');
+  const list = res.value.map(a => a.account.data.parsed.info)
+    .filter(i => Number(i.tokenAmount.uiAmount) > 0 && i.tokenAmount.decimals > 0)
+    .map(i => ({ mint: i.mint, amount: Number(i.tokenAmount.uiAmount), decimals: i.tokenAmount.decimals }))
+    .slice(0, 25);
+  const umi = createUmi(conn.rpcEndpoint).use(mplTokenMetadata());
+  await Promise.all(list.map(async t => {
+    try {
+      const m = await safeFetchMetadataFromSeeds(umi, { mint: umiPk(t.mint) });
+      if (m) { t.name = m.name.replace(/\0/g, '').trim(); t.symbol = m.symbol.replace(/\0/g, '').trim(); t.uri = m.uri.replace(/\0/g, '').trim(); }
+    } catch {}
+  }));
+  return list;
 }
 
 export async function getSolBalance(conn, pk) {

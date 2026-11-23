@@ -102,12 +102,15 @@
     <h2><span class="n">5</span>Paleidimas</h2>
     <div class="step" id="st-ipfs"><div><b>a) Logotipas ir metadata → IPFS</b><div class="hint" id="ipfsInfo"></div></div><button class="btn" id="doIpfs">Įkelti</button></div>
     <div class="step" id="st-mint"><div><b>b) Sukurti coiną (mint)</b><div class="hint" id="mintInfo"></div></div><button class="btn" id="doMint">Mint</button></div>
-    <details class="adv" id="recover"><summary>Coinas sukurtas, bet programa jo nerodo?</summary>
-      <label for="recMint">Coino CA (mint adresas)</label>
-      <input id="recMint" type="text" autocomplete="off" placeholder="pvz. 7xKX...pump">
-      <div class="hint">Phantom'e paspausk ant coino → ⋯ → Copy address (arba rask savo wallet'e solscan.io).</div>
-      <div class="row"><button class="btn ghost" id="recBtn">Naudoti šį coiną</button></div>
-    </details>
+    <div id="recover">
+      <div class="rec-head"><b>Tavo wallet'o coinai</b><button class="btn ghost sm" id="recRefresh">Atnaujinti</button></div>
+      <div class="hint">Jau sukūrei coiną? Paspausk ant jo ir galėsi kurti pool'ą.</div>
+      <div id="walletTokens"></div>
+      <details class="adv"><summary>Įvesti CA ranka</summary>
+        <input id="recMint" type="text" autocomplete="off" placeholder="Coino CA (mint adresas)">
+        <div class="row"><button class="btn ghost" id="recBtn">Naudoti šį coiną</button></div>
+      </details>
+    </div>
     <div class="step" id="st-pool"><div><b>c) Sukurti Meteora pool'ą → LIVE</b><div class="hint" id="poolInfo"></div></div><button class="btn red" id="doPool">Paleisti</button></div>
     <button class="btn ghost" id="resetDraft">Pradėti naują coiną</button>
   </section>
